@@ -17,15 +17,11 @@ cpi_data <- realtalk::c_cpi_u_annual
 # set base year to 2024 
 cpi2024 <- cpi_data$c_cpi_u[cpi_data$year==2024]
 
-#load CPS basic data, add domestic workers category
+#load CPS basic data, add domestic workers category and native born variable
 cps_basic <- load_basic(2024,year, month, age, female, wbhao, union, educ, cow1, citistat,
                   statefips, basicwgt, region, selfemp, emp,selfinc, lfstat,occ18,ind17) %>%
   filter(age>=16, emp==1, selfinc !=1,cow1!=8) %>%#selfemp !=1, selfinc !=1
-  # Merge annual CPI data to data frame by year
- # left_join(cpi_data, by='year') 
   mutate(
-    #orgwgt = orgwgt / (12*n_distinct(year)),
-   # realwageotc=wageotc*(cpi2024/cpi_u_rs),
     dom_work = case_when(
       #Maids
       occ18==4230 & ind17 == 9290 & !(cow1 %in% c(7)) ~ 1,
@@ -49,9 +45,40 @@ cps_basic <- load_basic(2024,year, month, age, female, wbhao, union, educ, cow1,
     ),
   )
 
+  #load CPS org data, add domestic workers category and native born variable
+cps_org <- load_org(2024,year, month, age, female, wbhao, union, educ, cow1, citistat, wage,
+                  statefips, orgwgt, region, selfemp, emp,selfinc, lfstat,occ18,ind17) %>%
+  filter(age>=16, emp==1, selfinc !=1,cow1!=8) %>%#selfemp !=1, selfinc !=1
+    # Merge annual CPI data to data frame by year
+  left_join(cpi_data, by='year') %>%
+  # inflation adjust wages to 2024$
+  mutate(realwage = wage * (cpi2024/c_cpi_u),
+  # add domestic workers and native born variables
+    dom_work = case_when(
+      #Maids
+      occ18==4230 & ind17 == 9290 & !(cow1 %in% c(7)) ~ 1,
+      #childcare nannies
+      occ18==4600 & ind17 %in% c(9290,7580) & !(cow1 %in% c(7)) ~ 2,
+      #childcare ownhome
+      occ18==4600 & ind17 %in% c(8470) & cow1 %in% c(7) ~ 3,
+      #dca not agency
+      ((occ18 %in% c(3601,3603,3605) & ind17==9290) | (occ18 %in% c(3602) & ind17 %in% c(9290,7580)))  & !(cow1 %in% c(7)) ~ 4,
+      #DCA agency
+      (occ18 %in% c(3601,3603,3605,3602) & ind17 %in% c(8170,8370))  & !(cow1 %in% c(7)) ~ 5,
+      TRUE~0
+    ),
+    dom_work_ind = case_when(
+      dom_work>0 ~ 1,
+      TRUE ~ 0
+    ),
+    native = case_when(
+      citistat %in% c(1, 2, 3) ~ 1, 
+      TRUE ~ 0
+    ),
+  )
 
 ## domestic (all) by region and state ##
-dom_all_geo <- cps_basic |> 
+dom_geo <- cps_basic |> 
     filter(dom_work_ind == 1) |>
     summarise(total_emp = sum(emp * basicwgt/12, na.rm=TRUE),
         n=n(),
@@ -61,7 +88,7 @@ dom_all_geo <- cps_basic |>
 
 ## domestic (all) by demographics (race, gender, race*gender, nativity) by region ##
 #find emp by sex
-dom_all_sex <- cps_basic |> 
+dom_sex <- cps_basic |> 
   filter(dom_work_ind == 1) |>
   mutate(female = to_factor(female),
          region = to_factor(region)) |>
@@ -70,7 +97,7 @@ dom_all_sex <- cps_basic |>
         .by=c(female, region))
 
 #find emp by race
-dom_all_race <- cps_basic |> 
+dom_race <- cps_basic |> 
   filter(dom_work_ind == 1) |>
   mutate(wbhao = to_factor(wbhao),
          region = to_factor(region)) |>
@@ -98,10 +125,21 @@ dom_native <- cps_basic |>
         .by=c(citistat, region)) 
 
 ## domestic (all) median wage by region and state ##
-XXXXXXXXXXXXXXX
+dom_wages <- cps_org |> 
+  filter(dom_work_ind == 1) |>
+  mutate(region = to_factor(region),
+        statefips = to_factor(statefips)) |> 
+  summarise(
+      wage_median = averaged_median(
+        x = realwage, 
+        w = orgwgt/12,  
+        quantiles_n = 9L, 
+        quantiles_w = c(1:4, 5, 4:1)),
+        n=n(),
+        .by=c(statefips, region))
 
 ## domestic (occs) by region ##
-dom_occ_reg <- cps_basic |> 
+dom_occ_geo <- cps_basic |> 
     filter(dom_work_ind == 1) |>
     summarise(total_emp = sum(emp * basicwgt/12, na.rm=TRUE),
         n=n(),
@@ -161,7 +199,18 @@ ag_native <- cps_basic |>
         .by=c(citistat, region)) 
 
 ## ag wage by region and state ##
-XXXXXXXXXXXXXXXXX
+ag_wages <- cps_org |> 
+  filter(occ18 == 6050) |>
+  mutate(region = to_factor(region),
+        statefips = to_factor(statefips)) |> 
+  summarise(
+      wage_median = averaged_median(
+        x = realwage, 
+        w = orgwgt/12,  
+        quantiles_n = 9L, 
+        quantiles_w = c(1:4, 5, 4:1)),
+        n=n(),
+        .by=c(statefips, region))
 
 ## pub sec (all) by region and state ##
 pubsec_all_geo <- cps_basic |> 
@@ -211,7 +260,18 @@ pubsec_native <- cps_basic |>
         .by=c(citistat, region)) 
 
 ## pub sec (all) wage by region and state ##
-XXXXXXXXXXXXXXXXX
+pubsec_wages <- cps_org |> 
+  filter(cow1 %in% c(1, 2, 3)) |>
+  mutate(region = to_factor(region),
+        statefips = to_factor(statefips)) |> 
+  summarise(
+      wage_median = averaged_median(
+        x = realwage, 
+        w = orgwgt/12,  
+        quantiles_n = 9L, 
+        quantiles_w = c(1:4, 5, 4:1)),
+        n=n(),
+        .by=c(statefips, region))
 
 ## pub sec (teachers) by region and state ##
 pubsec_ed_geo <- cps_basic |> 
@@ -227,4 +287,14 @@ pubsec_ed_geo <- cps_basic |>
         .by=c(pub_occ, region, state))
 
 ## all workers wage by region and state ##
-XXXXXXXXXXXXXX
+pubsec_wages <- cps_org |> 
+  mutate(region = to_factor(region),
+        statefips = to_factor(statefips)) |> 
+  summarise(
+      wage_median = averaged_median(
+        x = realwage, 
+        w = orgwgt/12,  
+        quantiles_n = 9L, 
+        quantiles_w = c(1:4, 5, 4:1)),
+        n=n(),
+        .by=c(statefips, region))
