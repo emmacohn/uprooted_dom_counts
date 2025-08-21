@@ -150,7 +150,7 @@ wb$add_worksheet(sheet = "Domestic workers demographics") $
   add_data(x = dom_race_sex, start_col = 13) $
   add_data(x = dom_native, start_col = 19)
 
-## domestic (all) median wage by region and state ##
+## domestic (all) median wage by region ##
 dom_wages <- cps_org |> 
   filter(dom_work_ind == 1) |>
   mutate(region = to_factor(region),
@@ -162,7 +162,7 @@ dom_wages <- cps_org |>
         quantiles_n = 9L, 
         quantiles_w = c(1:4, 5, 4:1)),
         n=n(),
-        .by=c(statefips, region))
+        .by=region)
 
 wb$add_worksheet(sheet = "Domestic workers wages") $
   add_data(x = dom_wages, start_col = 1)
@@ -228,8 +228,7 @@ wb$add_worksheet(sheet = "Ag workers demographics") $
 ## ag wage by region and state ##
 ag_wages <- cps_org |> 
   filter(occ18 == 6050) |>
-  mutate(region = to_factor(region),
-        statefips = to_factor(statefips)) |> 
+  mutate(region = to_factor(region)) |> 
   summarise(
       wage_median = averaged_median(
         x = realwage, 
@@ -237,7 +236,7 @@ ag_wages <- cps_org |>
         quantiles_n = 9L, 
         quantiles_w = c(1:4, 5, 4:1)),
         n=n(),
-        .by=c(statefips, region))
+        .by=region)
 
 wb$add_worksheet(sheet = "Ag workers wages") $
   add_data(x = ag_wages, start_col = 1)
@@ -317,6 +316,18 @@ wb$add_worksheet(sheet = "Pub sec workers demographics") $
 ## pub sec (all) wage by region and state ##
 pubsec_wages <- cps_org |> 
   filter(cow1 %in% c(1, 2, 3)) |>
+  mutate(region = to_factor(region)) |> 
+  summarise(
+      wage_median = averaged_median(
+        x = realwage, 
+        w = orgwgt/12,  
+        quantiles_n = 9L, 
+        quantiles_w = c(1:4, 5, 4:1)),
+        n=n(),
+        .by=region)
+
+pubsec_wages_state <- cps_org |> 
+  filter(cow1 %in% c(1, 2, 3)) |>
   mutate(region = to_factor(region),
         statefips = to_factor(statefips)) |> 
   summarise(
@@ -329,7 +340,8 @@ pubsec_wages <- cps_org |>
         .by=c(statefips, region))
 
 wb$add_worksheet(sheet = "Pub sec workers wages") $
-  add_data(x = pubsec_wages, start_col = 1)
+  add_data(x = pubsec_wages, start_col = 1) $
+  add_data(x = pubsec_wages_state, start_col = 6)  
 
 ### ALL WORKERS ###
 
