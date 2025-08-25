@@ -363,3 +363,5 @@ wb$add_worksheet(sheet = "All workers wages") $
 
 #save workbook
 wb_save(wb, "output/uprooted_counts_wages.xlsx")
+
+# thanks dp!
